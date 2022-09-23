@@ -1,21 +1,23 @@
 ﻿using System.Text.Json;
 using _26listeners.Models;
+using StackExchange.Redis;
 using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
-// TODO: listen to controls from PubSub
+// TODO: listen to shard:manage twitch:channels:manage
 internal sealed class ShardManager
 {
     public static TwitchChannel[] Channels { get; private set; } = Array.Empty<TwitchChannel>();
 
     private List<Shard> Shards { get; set; } = new();
-    private int ChannelsPerShard { get; set; } = 25;
+    private int ChannelsPerShard { get; set; }
     private int ShardsSpawned { get; set; }
     private int ShardsKilled { get; set; }
     private readonly IntervalTimer _timer = new();
 
-    public ShardManager(string channelsJson)
+    public ShardManager(string channelsJson, int channelsPerShard = 25)
     {
+        ChannelsPerShard = channelsPerShard;
         Channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsJson)
             ?? throw new JsonException("Channel deserialization error");
 
@@ -40,7 +42,7 @@ internal sealed class ShardManager
         _timer.Interval = TimeSpan.FromHours(1).TotalMilliseconds;
         _timer.AutoReset = true;
         _timer.Enabled = true;
-        _timer.Elapsed += (_, _) => CheckShardStates();
+        _timer.Elapsed += async (_, _) => await CheckShardStates();
     }
 
     public string Ping()
@@ -49,13 +51,10 @@ internal sealed class ShardManager
             $"| uptime avg: {Shards.Average(x => new DateTimeOffset(x.SpawnTime).ToUnixTimeSeconds())}";
     }
 
-    public void SetChannelsPerShard(int count)
-    {
-        ChannelsPerShard = count;
-    }
-
     public void RespawnShard(Shard shard)
     {
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} RESPAWN");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} RESPAWN");
         AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
         RemoveShard(shard);
         shard.Dispose();
@@ -64,6 +63,8 @@ internal sealed class ShardManager
     private void AddShard(Shard shard)
     {
         Log.Information($"+SHARD:{shard.Name}#{shard.Id}");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} ADD");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} ADD");
         Shards.Add(shard);
         ++ShardsSpawned;
     }
@@ -71,15 +72,51 @@ internal sealed class ShardManager
     private void RemoveShard(Shard shard)
     {
         Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} REMOVE");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} REMOVE");
         _ = Shards.Remove(shard);
-        ++ShardsKilled;
+        ++ShardsKilled; // this is not the active amount. stop decrementing it retard
     }
 
-    private void CheckShardStates()
+    private async Task CheckShardStates()
     {
         foreach (Shard shard in Shards)
         {
             if (shard.State is ShardState.Idle or ShardState.Faulted) RemoveShard(shard);
+        }
+        await RecalibrateTwitchChannels();
+    }
+
+    private async Task RecalibrateTwitchChannels()
+    {
+        RedisValue channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
+        while (!channelsRedis.HasValue)
+        {
+            Log.Warning("twitch:channels not found in Redis. Unable to update");
+            await Task.Delay(60000);
+            channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
+        }
+
+        TwitchChannel[]? _channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsRedis!)?
+            .Where(x => Channels.Max(y => y.Priority) != x.Priority)
+            .Where(x => x.Priority > -10)
+            .OrderByDescending(x => x.Priority)
+            .ToArray();
+        if (_channels is null) return;
+
+        IEnumerable<TwitchChannel> removedChannels = Channels.ExceptBy(_channels.Select(x => x.Username), x => x.Username);
+        IEnumerable<TwitchChannel> addedChannels = _channels.ExceptBy(Channels.Select(x => x.Username), x => x.Username);
+        foreach (TwitchChannel? channel in removedChannels)
+        {
+            if (channel is null) return;
+            Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username))?.PartChannel(channel);
+            await Task.Delay(1000);
+        }
+        foreach (TwitchChannel? channel in addedChannels)
+        {
+            if (channel is null) return;
+            Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username))?.JoinChannel(channel);
+            await Task.Delay(1000);
         }
     }
 }
