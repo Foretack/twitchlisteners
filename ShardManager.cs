@@ -1,9 +1,9 @@
 ﻿using System.Text.Json;
 using _26listeners.Models;
+using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
 // TODO: listen to controls from PubSub
-// TODO: hourly channel updates
 // TODO: "ping" command for general status
 internal sealed class ShardManager
 {
@@ -13,20 +13,13 @@ internal sealed class ShardManager
     private int ChannelsPerShard { get; set; } = 25;
     private int ShardsSpawned { get; set; }
     private int ShardsKilled { get; set; }
+    private readonly IntervalTimer _timer = new();
 
     public ShardManager(string channelsJson)
     {
         Channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsJson)
             ?? throw new JsonException("Channel deserialization error");
-    }
 
-    public void SetChannelsPerShard(int count)
-    {
-        ChannelsPerShard = count;
-    }
-
-    public void Start()
-    {
         // Determine main channel by top priority
         TwitchChannel mainChannel = Channels.First(x => Channels.Max(y => y.Priority) == x.Priority);
         Log.Information($"MAIN CHANNEL:{mainChannel}");
@@ -44,6 +37,16 @@ internal sealed class ShardManager
         {
             AddShard(new Shard("LISTENER", ShardsSpawned, channelBatch));
         }
+
+        _timer.Interval = TimeSpan.FromHours(1).TotalMilliseconds;
+        _timer.AutoReset = true;
+        _timer.Enabled = true;
+        _timer.Elapsed += (_, _) => CheckShardStates();
+    }
+
+    public void SetChannelsPerShard(int count)
+    {
+        ChannelsPerShard = count;
     }
 
     public void RespawnShard(Shard shard)
@@ -65,5 +68,13 @@ internal sealed class ShardManager
         Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
         _ = Shards.Remove(shard);
         ++ShardsKilled;
+    }
+
+    private void CheckShardStates()
+    {
+        foreach (Shard shard in Shards)
+        {
+            if (shard.State is ShardState.Idle or ShardState.Faulted) RemoveShard(shard);
+        }
     }
 }

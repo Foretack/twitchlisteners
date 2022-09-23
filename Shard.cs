@@ -18,7 +18,7 @@ internal sealed class Shard : AShard, IDisposable
         Log.Verbose($"CTOR {name}&{id}");
         Name = name;
         Id = id;
-        SpawnTime = DateTime.UtcNow;
+        SpawnTime = DateTime.Now;
         Channels = channels;
         State = ShardState.Initializing;
 
@@ -174,7 +174,7 @@ internal sealed class Shard : AShard, IDisposable
         if (Channels.Length == 0)
         {
             Log.Error($"{Name}&{Id} NO_CHANNELS");
-            Dispose();
+            State = ShardState.Idle;
         }
     }
     #endregion
@@ -207,13 +207,13 @@ internal sealed class Shard : AShard, IDisposable
         catch
         {
             Log.Error($"{Name}&{Id} BAD_STATE");
-            Dispose();
+            State = ShardState.Idle;
         }
         if (Channels.Length == 0
         || State is ShardState.Idle or ShardState.Faulted or ShardState.Uninitialized or ShardState.Disconnected)
         {
             Log.Error($"{Name}&{Id} BAD_STATE");
-            Dispose();
+            State = ShardState.Idle;
         }
     }
     #endregion
