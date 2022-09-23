@@ -4,7 +4,6 @@ using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
 // TODO: listen to controls from PubSub
-// TODO: "ping" command for general status
 internal sealed class ShardManager
 {
     public static TwitchChannel[] Channels { get; private set; } = Array.Empty<TwitchChannel>();
@@ -42,6 +41,12 @@ internal sealed class ShardManager
         _timer.AutoReset = true;
         _timer.Enabled = true;
         _timer.Elapsed += (_, _) => CheckShardStates();
+    }
+
+    public string Ping()
+    {
+        return $"{Shards.Count} active, {ShardsSpawned} spawned, {ShardsKilled} killed " +
+            $"| uptime avg: {Shards.Average(x => new DateTimeOffset(x.SpawnTime).ToUnixTimeSeconds())}";
     }
 
     public void SetChannelsPerShard(int count)
