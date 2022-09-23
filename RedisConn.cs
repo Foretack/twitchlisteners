@@ -37,6 +37,7 @@ internal sealed class RedisConn
     public RedisConn(string host)
     {
         var conn = ConnectionMultiplexer.Connect(host);
+        Log.Information("REDIS CONNECTED");
         Db = conn.GetDatabase();
         Sub = conn.GetSubscriber();
     }
@@ -45,6 +46,7 @@ internal sealed class RedisConn
     {
         if (!_pubsubChannels.ContainsKey(channel))
         {
+            Log.Debug($"NEW SUB CHANNEL: {channel}");
             ChannelMessageQueue queue = Sub.Subscribe(channel);
             _pubsubChannels.Add(channel, queue);
             return queue;

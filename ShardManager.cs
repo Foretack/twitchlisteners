@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using _26listeners.Models;
-using Serilog;
 
 namespace _26listeners;
 // TODO: listen to controls from PubSub

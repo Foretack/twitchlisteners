@@ -1,9 +1,8 @@
-﻿using Serilog;
+﻿global using Serilog;
+using Serilog.Events;
 using StackExchange.Redis;
 
 namespace _26listeners;
-// TODO: set up file logger
-// TODO: do more logging
 internal static class Program
 {
     public static RedisConn Redis { get; private set; } = default!;
@@ -11,6 +10,11 @@ internal static class Program
 
     private static async Task Main()
     {
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.File("logs.txt", LogEventLevel.Debug, flushToDiskInterval: TimeSpan.FromMinutes(10), rollingInterval: RollingInterval.Day)
+            .WriteTo.File("verbose.txt", LogEventLevel.Verbose, flushToDiskInterval: TimeSpan.FromMinutes(10), rollingInterval: RollingInterval.Day)
+            .WriteTo.Console(LogEventLevel.Information)
+            .CreateLogger();
         Redis = new RedisConn("localhost");
 
         RedisValue channelsRedis = await Redis.Db.StringGetAsync("twitch:channels");
@@ -20,8 +24,9 @@ internal static class Program
             await Task.Delay(5000);
             channelsRedis = await Redis.Db.StringGetAsync("twitch:channels");
         }
-
+        Log.Information("got twitch:channels");
+        Log.Debug("starting ShardManager");
         Manager = new ShardManager(channelsRedis.ToString());
-        Console.WriteLine("Hello, World!");
+        _ = Console.Read();
     }
 }
