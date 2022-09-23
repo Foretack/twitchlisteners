@@ -7,5 +7,6 @@ internal enum ShardState : byte
     Disconnected,
     Active,
     Idle,
-    Faulted
+    Faulted,
+    Killed
 }

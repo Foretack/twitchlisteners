@@ -5,11 +5,13 @@ using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
 using TwitchLib.Communication.Clients;
 using TwitchLib.Communication.Events;
+using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
 internal sealed class Shard : AShard, IDisposable
 {
     private TwitchClient client;
+    private IntervalTimer timer;
 
     public Shard(string name, int id, TwitchChannel[] channels)
     {
@@ -37,6 +39,13 @@ internal sealed class Shard : AShard, IDisposable
         client.OnLog += OnLog;
 
         if (!client.Connect()) Program.Manager.RespawnShard(this);
+        timer = new IntervalTimer
+        {
+            Interval = TimeSpan.FromMinutes(30).TotalMilliseconds,
+            AutoReset = true,
+            Enabled = true
+        };
+        timer.Elapsed += (_, _) => CheckState();
     }
     private TwitchClient Create()
     {
@@ -129,25 +138,44 @@ internal sealed class Shard : AShard, IDisposable
     #endregion
 
     #region Channel management
-    public async Task JoinChannels()
+    private async Task JoinChannels()
     {
         try
         {
             foreach (string channel in Channels.Select(x => x.Username))
             {
                 client.JoinChannel(channel);
-                Log.Information($"{Name}&{Id} ATTEMPTING TO JOIN {channel}");
+                Log.Information($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
                 await Task.Delay(1000);
             }
         }
         catch (Exception)
         {
             _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} FAULTED");
-            Log.Error($"{Name}&{Id} FAULTEDs");
+            Log.Error($"{Name}&{Id} FAULTED");
             State = ShardState.Faulted;
             return;
         }
         State = ShardState.Active;
+    }
+
+    public void JoinChannel(TwitchChannel channel)
+    {
+        if (Channels.Any(x => x.Username == channel.Username)) return;
+        client.JoinChannel(channel.Username);
+        Channels = Channels.Concat(new[] { channel }).ToArray();
+    }
+
+    public void PartChannel(TwitchChannel channel)
+    {
+        if (!Channels.Any(x => x.Username == channel.Username)) return;
+        client.LeaveChannel(channel.Username);
+        Channels = Channels.Where(x => x.Username != channel.Username).ToArray();
+        if (Channels.Length == 0)
+        {
+            Log.Error($"{Name}&{Id} NO_CHANNELS");
+            Dispose();
+        }
     }
     #endregion
 
@@ -169,6 +197,25 @@ internal sealed class Shard : AShard, IDisposable
             Program.Manager.RespawnShard(this);
         }
     }
+
+    private void CheckState()
+    {
+        try
+        {
+            client.SendRaw("PING");
+        }
+        catch
+        {
+            Log.Error($"{Name}&{Id} BAD_STATE");
+            Dispose();
+        }
+        if (Channels.Length == 0
+        || State is ShardState.Idle or ShardState.Faulted or ShardState.Uninitialized or ShardState.Disconnected)
+        {
+            Log.Error($"{Name}&{Id} BAD_STATE");
+            Dispose();
+        }
+    }
     #endregion
 
     #region IDisposable
@@ -182,12 +229,14 @@ internal sealed class Shard : AShard, IDisposable
             {
                 Name = default!;
                 client = default!;
+                timer = default!;
             }
 
             Id = default!;
             SpawnTime = default!;
-            State = default!;
+            State = ShardState.Killed;
 
+            Log.Warning($"{Name}&{Id} DISPOSED");
             _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSED");
             disposedValue = true;
         }
