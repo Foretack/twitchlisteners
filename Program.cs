@@ -27,6 +27,6 @@ internal static class Program
         Log.Information("got twitch:channels");
         Log.Debug("starting ShardManager");
         Manager = new ShardManager(channelsRedis.ToString());
-        _ = Console.Read();
+        _ = Console.ReadLine();
     }
 }

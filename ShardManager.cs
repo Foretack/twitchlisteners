@@ -4,7 +4,6 @@ using StackExchange.Redis;
 using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
-// TODO: listen to shard:manage twitch:channels:manage
 internal sealed class ShardManager
 {
     public static TwitchChannel[] Channels { get; private set; } = Array.Empty<TwitchChannel>();
@@ -43,14 +42,21 @@ internal sealed class ShardManager
         _timer.AutoReset = true;
         _timer.Enabled = true;
         _timer.Elapsed += async (_, _) => await CheckShardStates();
+
+        Program.Redis["shard:manage"].OnMessage(async message => await ManageShard(message));
+        Program.Redis["twitch:channels:manage"].OnMessage(async message => await ManageTwitchChannels(message));
     }
 
+    #region Shards
     public string Ping()
     {
         return $"{Shards.Count} active, {ShardsSpawned} spawned, {ShardsKilled} killed " +
             $"| uptime avg: {Shards.Average(x => new DateTimeOffset(x.SpawnTime).ToUnixTimeSeconds())}";
     }
 
+    /// <summary>
+    /// Removes a shard then disposes it
+    /// </summary>
     public void RespawnShard(Shard shard)
     {
         _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} RESPAWN");
@@ -60,6 +66,9 @@ internal sealed class ShardManager
         shard.Dispose();
     }
 
+    /// <summary>
+    /// Adds a new shard
+    /// </summary>
     private void AddShard(Shard shard)
     {
         Log.Information($"+SHARD:{shard.Name}#{shard.Id}");
@@ -87,6 +96,35 @@ internal sealed class ShardManager
         await RecalibrateTwitchChannels();
     }
 
+    private async Task ManageShard(ChannelMessage channelMessage)
+    {
+        await Task.Run(() =>
+        {
+            Log.Verbose(channelMessage.Message!);
+            try
+            {
+                // id REMOVE or id RESPAWN
+                string[] content = channelMessage.Message.ToString().Split(' ');
+                int id = int.Parse(content[0]);
+                bool remove = content[1] == "REMOVE";
+                Shard target = Shards.First(x => x.Id == id);
+
+                if (remove)
+                {
+                    RemoveShard(target);
+                    return;
+                }
+                RespawnShard(target);
+            }
+            catch
+            {
+                Log.Error($"unrecognized shard:manage command: {channelMessage.Message}");
+            }
+        });
+    }
+    #endregion
+
+    #region Twitch channels
     private async Task RecalibrateTwitchChannels()
     {
         RedisValue channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
@@ -119,4 +157,32 @@ internal sealed class ShardManager
             await Task.Delay(1000);
         }
     }
+
+    private async Task ManageTwitchChannels(ChannelMessage channelMessage)
+    {
+        await Task.Run(() =>
+        {
+            string[] content = channelMessage.Message.ToString().Split(' ');
+            string targetChannelJson = string.Join(' ', content[1..]);                     // Receive channel objects as json
+            TwitchChannel? channel = JsonSerializer.Deserialize<TwitchChannel>(targetChannelJson);
+            if (channel is null) return;
+            if (content[0] == "JOIN")
+            {
+                Shard? target = Shards.FirstOrDefault(x => x.Channels.Length < ChannelsPerShard);
+                if (target is null)
+                {
+                    AddShard(new Shard("LISTENER", ShardsSpawned, new[] { channel }));
+                    return;
+                }
+                target.JoinChannel(channel);
+            }
+            if (content[0] == "PART")
+            {
+                Shard? target = Shards.FirstOrDefault(x => x.Channels.Any(y => y.Username == channel.Username));
+                if (target is null) return;
+                target.PartChannel(channel);
+            }
+        });
+    }
+    #endregion
 }
