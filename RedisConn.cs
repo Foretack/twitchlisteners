@@ -20,7 +20,6 @@ namespace _26listeners;
 /* sub <-
 
  * shard:manage
- * twitch:channels:manage
 
  */
 internal sealed class RedisConn

@@ -44,7 +44,6 @@ internal sealed class ShardManager
         _timer.Elapsed += async (_, _) => await CheckShardStates();
 
         Program.Redis["shard:manage"].OnMessage(async message => await ManageShard(message));
-        Program.Redis["twitch:channels:manage"].OnMessage(async message => await ManageTwitchChannels(message));
     }
 
     #region Shards
@@ -55,7 +54,7 @@ internal sealed class ShardManager
     }
 
     /// <summary>
-    /// Removes a shard then disposes it
+    /// Adds a new identical shard then removes the passed one
     /// </summary>
     public void RespawnShard(Shard shard)
     {
@@ -63,7 +62,7 @@ internal sealed class ShardManager
         _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} RESPAWN");
         AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
         RemoveShard(shard);
-        shard.Dispose();
+
     }
 
     /// <summary>
@@ -78,33 +77,52 @@ internal sealed class ShardManager
         ++ShardsSpawned;
     }
 
+    /// <summary>
+    /// Removes a shard then disposes it
+    /// </summary>
     private void RemoveShard(Shard shard)
     {
         Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
         _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} REMOVE");
         _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} REMOVE");
         _ = Shards.Remove(shard);
+        shard.Dispose();
         ++ShardsKilled; // this is not the active amount. stop decrementing it retard
     }
 
+    /// <summary>
+    /// Removes or respawns inactive shards
+    /// </summary>
     private async Task CheckShardStates()
     {
         foreach (Shard shard in Shards)
         {
-            if (shard.State is ShardState.Idle or ShardState.Faulted) RemoveShard(shard);
+            if (shard.State is ShardState.Idle or ShardState.Faulted)
+            {
+                if (shard.Channels.Length == 0) RemoveShard(shard);
+                else RespawnShard(shard);
+            }
         }
         await RecalibrateTwitchChannels();
     }
 
+    /// <summary>
+    /// shard:manage method
+    /// </summary>
     private async Task ManageShard(ChannelMessage channelMessage)
     {
-        await Task.Run(() =>
+        await Task.Run(async () =>
         {
             Log.Verbose(channelMessage.Message!);
             try
             {
-                // id REMOVE or id RESPAWN
+                // id REMOVE, id RESPAWN or PING
                 string[] content = channelMessage.Message.ToString().Split(' ');
+                if (content[0] == "PING")                                               // PING
+                {
+                    _ = await Program.Redis.Sub.PublishAsync("shard:manage", Ping());
+                    return;
+                }
                 int id = int.Parse(content[0]);
                 bool remove = content[1] == "REMOVE";
                 Shard target = Shards.First(x => x.Id == id);
@@ -125,6 +143,9 @@ internal sealed class ShardManager
     #endregion
 
     #region Twitch channels
+    /// <summary>
+    /// Loads twitch channels again from twitch:channels and checks for changes to be made to shards
+    /// </summary>
     private async Task RecalibrateTwitchChannels()
     {
         RedisValue channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
@@ -156,33 +177,6 @@ internal sealed class ShardManager
             Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username))?.JoinChannel(channel);
             await Task.Delay(1000);
         }
-    }
-
-    private async Task ManageTwitchChannels(ChannelMessage channelMessage)
-    {
-        await Task.Run(() =>
-        {
-            string[] content = channelMessage.Message.ToString().Split(' ');
-            string targetChannelJson = string.Join(' ', content[1..]);                     // Receive channel objects as json
-            TwitchChannel? channel = JsonSerializer.Deserialize<TwitchChannel>(targetChannelJson);
-            if (channel is null) return;
-            if (content[0] == "JOIN")
-            {
-                Shard? target = Shards.FirstOrDefault(x => x.Channels.Length < ChannelsPerShard);
-                if (target is null)
-                {
-                    AddShard(new Shard("LISTENER", ShardsSpawned, new[] { channel }));
-                    return;
-                }
-                target.JoinChannel(channel);
-            }
-            if (content[0] == "PART")
-            {
-                Shard? target = Shards.FirstOrDefault(x => x.Channels.Any(y => y.Username == channel.Username));
-                if (target is null) return;
-                target.PartChannel(channel);
-            }
-        });
     }
     #endregion
 }
