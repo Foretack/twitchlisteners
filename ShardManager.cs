@@ -58,8 +58,8 @@ internal sealed class ShardManager
     /// </summary>
     public void RespawnShard(Shard shard)
     {
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} RESPAWN");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} RESPAWN");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} RESPAWN");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} RESPAWN");
         AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
         RemoveShard(shard);
 
@@ -71,8 +71,8 @@ internal sealed class ShardManager
     private void AddShard(Shard shard)
     {
         Log.Information($"+SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} ADD");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} ADD");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} ADD");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} ADD");
         Shards.Add(shard);
         ++ShardsSpawned;
     }
@@ -83,8 +83,8 @@ internal sealed class ShardManager
     private void RemoveShard(Shard shard)
     {
         Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}#{shard.Id} REMOVE");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}#{shard.Id} REMOVE");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} REMOVE");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} REMOVE");
         _ = Shards.Remove(shard);
         shard.Dispose();
         ++ShardsKilled; // this is not the active amount. stop decrementing it retard

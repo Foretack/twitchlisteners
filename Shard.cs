@@ -91,7 +91,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Channels
     private async void OnJoinedChannel(object? sender, OnJoinedChannelArgs e)
     {
-        Log.Debug($"{Name}&{Id} JOINED {e.Channel}");
+        Log.Information($"{Name}&{Id} JOINED {e.Channel}");
         _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
     }
 
@@ -145,7 +145,7 @@ internal sealed class Shard : AShard, IDisposable
             foreach (string channel in Channels.Select(x => x.Username))
             {
                 client.JoinChannel(channel);
-                Log.Information($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
+                Log.Debug($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
                 await Task.Delay(1000);
             }
         }
