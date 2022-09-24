@@ -41,11 +41,11 @@ internal sealed class Shard : AShard, IDisposable
         if (!client.Connect()) Program.Manager.RespawnShard(this);
         timer = new IntervalTimer
         {
-            Interval = TimeSpan.FromMinutes(30).TotalMilliseconds,
+            Interval = TimeSpan.FromMinutes(5).TotalMilliseconds,
             AutoReset = true,
             Enabled = true
         };
-        timer.Elapsed += (_, _) => CheckState();
+        timer.Elapsed += (_, _) => CheckState(); // Check shard state to avoid bad state exceptions & free memory
     }
     private TwitchClient Create()
     {
@@ -91,7 +91,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Channels
     private async void OnJoinedChannel(object? sender, OnJoinedChannelArgs e)
     {
-        Log.Information($"{Name}&{Id} JOINED {e.Channel}");
+        Log.Debug($"{Name}&{Id} JOINED {e.Channel}");
         _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
     }
 
@@ -148,6 +148,7 @@ internal sealed class Shard : AShard, IDisposable
                 Log.Debug($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
                 await Task.Delay(1000);
             }
+            Log.Information($"{Name}&{Id} READY");
         }
         catch (Exception)
         {

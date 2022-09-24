@@ -58,8 +58,8 @@ internal sealed class ShardManager
     /// </summary>
     public void RespawnShard(Shard shard)
     {
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} RESPAWN");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} RESPAWN");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN");
         AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
         RemoveShard(shard);
 
@@ -83,8 +83,8 @@ internal sealed class ShardManager
     private void RemoveShard(Shard shard)
     {
         Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} REMOVE");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} REMOVE");
+        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE");
+        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE");
         _ = Shards.Remove(shard);
         shard.Dispose();
         ++ShardsKilled; // this is not the active amount. stop decrementing it retard
@@ -95,15 +95,15 @@ internal sealed class ShardManager
     /// </summary>
     private async Task CheckShardStates()
     {
+        await RecalibrateTwitchChannels();
         foreach (Shard shard in Shards)
         {
             if (shard.State is ShardState.Idle or ShardState.Faulted)
             {
-                if (shard.Channels.Length == 0) RemoveShard(shard);
+                if (shard.Channels.Length == 0) RemoveShard(shard); // No channels left; shard has no use
                 else RespawnShard(shard);
             }
         }
-        await RecalibrateTwitchChannels();
     }
 
     /// <summary>
@@ -123,9 +123,9 @@ internal sealed class ShardManager
                     _ = await Program.Redis.Sub.PublishAsync("shard:manage", Ping());
                     return;
                 }
-                int id = int.Parse(content[0]);
-                bool remove = content[1] == "REMOVE";
-                Shard target = Shards.First(x => x.Id == id);
+                int id = int.Parse(content[0]); // id of shard to modify
+                bool remove = content[1] == "REMOVE"; // action
+                Shard target = Shards.First(x => x.Id == id); // find shard with id
 
                 if (remove)
                 {
