@@ -95,14 +95,22 @@ internal sealed class ShardManager
     /// </summary>
     private async Task CheckShardStates()
     {
-        await RecalibrateTwitchChannels();
-        foreach (Shard shard in Shards)
+        try
         {
-            if (shard.State is ShardState.Idle or ShardState.Faulted)
+            await RecalibrateTwitchChannels();
+            await Task.Delay(TimeSpan.FromSeconds(30)); // delay by 30s to avoid same time read-write operations
+            foreach (Shard shard in Shards)
             {
-                if (shard.Channels.Length == 0) RemoveShard(shard); // No channels left; shard has no use
-                else RespawnShard(shard);
+                if (shard.State is ShardState.Idle or ShardState.Faulted)
+                {
+                    if (shard.Channels.Length == 0) RemoveShard(shard); // No channels left; shard has no use
+                    else RespawnShard(shard);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"Error checking shard states");
         }
     }
 
