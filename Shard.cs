@@ -204,15 +204,17 @@ internal sealed class Shard : AShard, IDisposable
     {
         try
         {
+            Log.Verbose($"{Name}&{Id} is connected to {client.JoinedChannels.Count} channels");
             client.SendRaw("PING");
         }
-        catch
+        catch (Exception ex)
         {
-            Log.Error($"{Name}&{Id} BAD_STATE");
+            Log.Error(ex, $"{Name}&{Id}:{client.JoinedChannels.Count} BAD_STATE");
             State = ShardState.Idle;
         }
         if (Channels.Length == 0
-        || State is ShardState.Idle or ShardState.Faulted or ShardState.Uninitialized or ShardState.Disconnected)
+        || client.JoinedChannels.Count == 0
+        || State is ShardState.Faulted or ShardState.Uninitialized or ShardState.Disconnected)
         {
             Log.Error($"{Name}&{Id} BAD_STATE");
             State = ShardState.Idle;
@@ -228,7 +230,7 @@ internal sealed class Shard : AShard, IDisposable
         if (!disposedValue)
         {
             Log.Warning($"{Name}&{Id} DISPOSING");
-            _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSING");
+            _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSING ⚠ ");
             if (disposing)
             {
                 Name = default!;
