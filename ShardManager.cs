@@ -99,13 +99,23 @@ internal sealed class ShardManager
         {
             await RecalibrateTwitchChannels();
             await Task.Delay(TimeSpan.FromSeconds(30)); // delay by 30s to avoid same time read-write operations
+            List<(bool remove, Shard shard)> temp = new(); // do this to avoid reading and writing at the same time
             foreach (Shard shard in Shards)
             {
                 if (shard.State is ShardState.Idle or ShardState.Faulted)
                 {
-                    if (shard.Channels.Length == 0) RemoveShard(shard); // No channels left; shard has no use
-                    else RespawnShard(shard);
+                    if (shard.Channels.Length == 0) temp.Add((true, shard)); // No channels left; shard has no use
+                    else temp.Add((false, shard));
                 }
+            }
+            foreach ((bool remove, Shard shard) in temp)
+            {
+                if (remove)
+                {
+                    RemoveShard(shard);
+                    continue;
+                }
+                RespawnShard(shard);
             }
         }
         catch (Exception ex)
