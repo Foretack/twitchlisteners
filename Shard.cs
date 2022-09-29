@@ -149,6 +149,7 @@ internal sealed class Shard : AShard, IDisposable
                 await Task.Delay(1000);
             }
             Log.Information($"{Name}&{Id} READY");
+            _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} READY");
         }
         catch (Exception)
         {
@@ -226,6 +227,8 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (!disposedValue)
         {
+            Log.Warning($"{Name}&{Id} DISPOSING");
+            _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSING");
             if (disposing)
             {
                 Name = default!;
@@ -237,8 +240,6 @@ internal sealed class Shard : AShard, IDisposable
             SpawnTime = default!;
             State = ShardState.Killed;
 
-            Log.Warning($"{Name}&{Id} DISPOSED");
-            _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSED");
             disposedValue = true;
         }
     }
