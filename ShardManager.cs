@@ -201,7 +201,7 @@ internal sealed class ShardManager
         foreach (TwitchChannel? channel in addedChannels)
         {
             if (channel is null) return;
-            Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username) && x.Name != "MAIN")?.JoinChannel(channel);
+            Shards.FirstOrDefault(x => x.Name != "MAIN" && x.Channels.Any(x => x.Username == channel.Username))?.JoinChannel(channel);
             await Task.Delay(1000);
         }
         Recalibrating = false;
