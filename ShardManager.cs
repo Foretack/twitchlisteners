@@ -186,7 +186,7 @@ internal sealed class ShardManager
             .OrderByDescending(x => x.Priority)
             .ToArray();
         if (_channels is null) return;
-        Log.Information($"Loaded {_channels.Length} channels");
+        Log.Debug($"Loaded {_channels.Length} channels");
 
         IEnumerable<TwitchChannel> removedChannels = Channels.ExceptBy(_channels.Select(x => x.Username), x => x.Username);
         IEnumerable<TwitchChannel> addedChannels = _channels.ExceptBy(Channels.Select(x => x.Username), x => x.Username);
