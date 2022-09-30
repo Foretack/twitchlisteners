@@ -104,7 +104,7 @@ internal sealed class ShardManager
             List<(bool remove, Shard shard)> temp = new(); // do this to avoid reading and writing at the same time
             foreach (Shard shard in Shards)
             {
-                Log.Verbose($"{nameof(CheckShardStates)} going over: {shard.Name}&{shard.Id}");
+                Log.Verbose($"{nameof(CheckShardStates)} going over: {shard.Name}&{shard.Id}:{shard.State}");
                 if (shard.State is ShardState.Idle or ShardState.Faulted)
                 {
                     if (shard.Channels.Length == 0) temp.Add((true, shard)); // No channels left; shard has no use
@@ -182,7 +182,6 @@ internal sealed class ShardManager
         }
 
         TwitchChannel[]? _channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsRedis!)?
-            .Where(x => Channels.Max(y => y.Priority) != x.Priority)
             .Where(x => x.Priority > -10)
             .OrderByDescending(x => x.Priority)
             .ToArray();
@@ -202,7 +201,7 @@ internal sealed class ShardManager
         foreach (TwitchChannel? channel in addedChannels)
         {
             if (channel is null) return;
-            Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username))?.JoinChannel(channel);
+            Shards.FirstOrDefault(x => x.Channels.Any(x => x.Username == channel.Username) && x.Name != "MAIN")?.JoinChannel(channel);
             await Task.Delay(1000);
         }
         Recalibrating = false;
