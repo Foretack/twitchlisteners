@@ -11,6 +11,7 @@ internal static class Program
     private static async Task Main()
     {
         Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Verbose()
             .WriteTo.File("verbose.txt", LogEventLevel.Verbose, "{Timestamp:HH:mm:ss zzz}-----[{Level}]➜ {Message:lj}{NewLine}", flushToDiskInterval: TimeSpan.FromMinutes(10), rollingInterval: RollingInterval.Day)
             .WriteTo.File("logs.txt", LogEventLevel.Debug, "{Timestamp:HH:mm:ss zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}", flushToDiskInterval: TimeSpan.FromMinutes(10), rollingInterval: RollingInterval.Day)
             .WriteTo.Console(LogEventLevel.Information)
