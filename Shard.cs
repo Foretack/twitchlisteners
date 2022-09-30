@@ -67,14 +67,14 @@ internal sealed class Shard : AShard, IDisposable
     private async void OnReconnected(object? sender, OnReconnectedEventArgs e)
     {
         Log.Information($"{Name}&{Id} RECONNECTED");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED");
+        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED 🔄 ");
         await RejoinOrRespawn();
     }
 
     private async void OnConnectionError(object? sender, OnConnectionErrorArgs e)
     {
         Log.Error($"{Name}&{Id} CONNECTION_ERROR");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR");
+        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR ⚠ ");
         State = ShardState.Faulted;
         Program.Manager.RespawnShard(this);
     }
@@ -82,7 +82,7 @@ internal sealed class Shard : AShard, IDisposable
     private async void OnDisconnected(object? sender, OnDisconnectedEventArgs e)
     {
         Log.Error($"{Name}&{Id} DISCONNECTED");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED");
+        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED ⚠ ");
         State = ShardState.Disconnected;
         Program.Manager.RespawnShard(this);
     }
@@ -149,7 +149,7 @@ internal sealed class Shard : AShard, IDisposable
                 await Task.Delay(1000);
             }
             Log.Information($"{Name}&{Id} READY");
-            _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} READY");
+            _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} READY ✅ ");
         }
         catch (Exception)
         {
