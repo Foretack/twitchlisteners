@@ -41,7 +41,7 @@ internal sealed class Shard : AShard, IDisposable
         if (!client.Connect()) Program.Manager.RespawnShard(this);
         timer = new IntervalTimer
         {
-            Interval = TimeSpan.FromMinutes(5).TotalMilliseconds,
+            Interval = TimeSpan.FromMinutes(15).TotalMilliseconds, // too often makes it write too much into verbose logs
             AutoReset = true,
             Enabled = true
         };

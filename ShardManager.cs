@@ -104,7 +104,7 @@ internal sealed class ShardManager
             List<(bool remove, Shard shard)> temp = new(); // do this to avoid reading and writing at the same time
             foreach (Shard shard in Shards)
             {
-                Log.Verbose($"{nameof(CheckShardStates)} going over: {shard.Name}&{shard.Id}:{shard.State}");
+                Log.Verbose($"{nameof(CheckShardStates)}: {shard.Name}&{shard.Id}:{shard.State} ➜{shard.SpawnTime}");
                 if (shard.State is ShardState.Idle or ShardState.Faulted)
                 {
                     if (shard.Channels.Length == 0) temp.Add((true, shard)); // No channels left; shard has no use
