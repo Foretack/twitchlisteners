@@ -159,6 +159,7 @@ internal sealed class ShardManager
             }
             catch
             {
+                if (channelMessage.Message.ToString().Contains("active,")) return;
                 Log.Error($"unrecognized shard:manage command: {channelMessage.Message}");
             }
         });
