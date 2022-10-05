@@ -191,6 +191,11 @@ internal sealed class ShardManager
 
         IEnumerable<TwitchChannel> removedChannels = Channels.ExceptBy(_channels.Select(x => x.Username), x => x.Username);
         IEnumerable<TwitchChannel> addedChannels = _channels.ExceptBy(Channels.Select(x => x.Username), x => x.Username);
+        if (removedChannels.Any() || addedChannels.Any())
+        {
+            Channels = Channels.Where(x => !removedChannels.Contains(x)).Concat(addedChannels).ToArray();
+        }
+
         Log.Debug($"channels to be removed: {string.Join(", ", removedChannels)}");
         Log.Debug($"channels to be added: {string.Join(", ", addedChannels)}");
         foreach (TwitchChannel? channel in removedChannels)
