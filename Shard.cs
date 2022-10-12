@@ -153,7 +153,7 @@ internal sealed class Shard : AShard, IDisposable
             foreach (string channel in Channels.Select(x => x.Username))
             {
                 client.JoinChannel(channel);
-                Log.Debug($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
+                Log.Verbose($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
                 await Task.Delay(1000);
             }
             Log.Information($"{Name}&{Id} READY");
