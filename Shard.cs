@@ -91,8 +91,13 @@ internal sealed class Shard : AShard, IDisposable
     #region Channels
     private async void OnJoinedChannel(object? sender, OnJoinedChannelArgs e)
     {
+        if (State == ShardState.Active)
+        {
+            Log.Information($"{Name}&{Id} JOINED {e.Channel}");
+            _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
+            return;
+        }
         Log.Debug($"{Name}&{Id} JOINED {e.Channel}");
-        _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
     }
 
     private async void OnLeftChannel(object? sender, OnLeftChannelArgs e)
@@ -120,11 +125,14 @@ internal sealed class Shard : AShard, IDisposable
     #region Other
     private void OnLog(object? sender, OnLogArgs e)
     {
-        if (e.Data == ":tmi.twitch.tv RECONNECT")
+        switch (e.Data)
         {
-            Log.Error($"{Name}&{Id} {nameof(OnLog)}");
-            State = ShardState.Connected;
-            Program.Manager.RespawnShard(this);
+            case "RECONNECT :tmi.twitch.tv":
+            case ":tmi.twitch.tv RECONNECT":
+                Log.Error($"{Name}&{Id} {nameof(OnLog)}");
+                State = ShardState.Disconnected;
+                Program.Manager.RespawnShard(this);
+                break;
         }
     }
 
