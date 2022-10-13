@@ -11,7 +11,7 @@ namespace _26listeners;
 internal sealed class Shard : AShard, IDisposable
 {
     private TwitchClient client;
-    private IntervalTimer timer;
+    private IntervalTimer timer = default!;
 
     public Shard(string name, int id, TwitchChannel[] channels)
     {
