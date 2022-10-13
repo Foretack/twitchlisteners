@@ -38,7 +38,15 @@ internal sealed class Shard : AShard, IDisposable
         client.OnError += OnError;
         client.OnLog += OnLog;
 
-        if (!client.Connect()) Program.Manager.RespawnShard(this);
+        try { _ = client.Connect(); }
+        catch (Exception ex)
+        {
+            State = ShardState.Faulted;
+            Log.Error(ex, $"Exception caught whilst initializing {Name}&{Id}");
+            Program.Manager.RespawnShard(this);
+            return;
+        }
+
         timer = new IntervalTimer
         {
             Interval = TimeSpan.FromMinutes(15).TotalMilliseconds, // too often makes it write too much into verbose logs
