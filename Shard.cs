@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using _26listeners.Models;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
@@ -13,6 +14,10 @@ internal sealed class Shard : AShard, IDisposable
     private TwitchClient client;
     private IntervalTimer timer = default!;
     private bool NoProceed => disposedValue || string.IsNullOrEmpty(Name);
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public Shard(string name, int id, TwitchChannel[] channels)
     {
@@ -134,7 +139,7 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (NoProceed) return;
         ChatMessage message = e.ChatMessage;
-        string json = JsonSerializer.Serialize(message);
+        string json = JsonSerializer.Serialize(message, _jsonOptions);
         _ = await Program.Redis.Sub.PublishAsync("twitch:messages", json);
     }
     #endregion
