@@ -30,7 +30,7 @@ internal sealed class ShardManager
             .Where(x => x.Priority > -10)                               // Exclude channels with -10 or less priority
             .OrderByDescending(x => x.Priority)                         // Prioritize channels with higher priority
             .Chunk(ChannelsPerShard).ToArray();                         // Convert to array to prevent double iteration
-        Log.Information($"CHUNKS:{chunks.Length}");
+        Log.Information($"[M] CHUNKS:{chunks.Length}");
 
         // Main channel is always the first to be joined
         AddShard(new Shard("MAIN", ShardsSpawned, new[] { mainChannel }));
@@ -50,8 +50,8 @@ internal sealed class ShardManager
     #region Shards
     public string Ping()
     {
-        Log.Verbose("shard status pinged");
-        return $"{Shards.Count} active, {ShardsSpawned} spawned, {ShardsKilled} killed ";
+        Log.Verbose("[M] shard status pinged");
+        return $"{ShardsSpawned - ShardsKilled} active, {ShardsSpawned} spawned, {ShardsKilled} killed ";
     }
 
     /// <summary>
@@ -59,11 +59,13 @@ internal sealed class ShardManager
     /// </summary>
     public void RespawnShard(Shard shard)
     {
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
-        AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
+        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
+        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
+        if (!string.IsNullOrEmpty(shard.Name) || shard.Name.Length < 2)
+            AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
+        else
+            AddShard(new Shard("NONAME", ShardsSpawned, shard.Channels));
         RemoveShard(shard);
-
     }
 
     /// <summary>
@@ -71,9 +73,9 @@ internal sealed class ShardManager
     /// </summary>
     private void AddShard(Shard shard)
     {
-        Log.Information($"+SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id} ADD 🥤 ");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id} ADD 🥤 ");
+        Log.Information($"[M] +SHARD:{shard.Name}#{shard.Id}");
+        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id} ADD 🥤 ");
+        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id} ADD 🥤 ");
         Shards.Add(shard);
         ++ShardsSpawned;
     }
@@ -83,9 +85,9 @@ internal sealed class ShardManager
     /// </summary>
     private void RemoveShard(Shard shard)
     {
-        Log.Information($"-SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:status:all", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
-        _ = Program.Redis.Sub.Publish($"shard:status:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
+        Log.Information($"[M] -SHARD:{shard.Name}#{shard.Id}");
+        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
+        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
         _ = Shards.Remove(shard);
         shard.Dispose();
         ++ShardsKilled; // this is not the active amount. stop decrementing it retard
@@ -96,22 +98,22 @@ internal sealed class ShardManager
     /// </summary>
     private async Task CheckShardStates()
     {
-        Log.Verbose($"{nameof(CheckShardStates)} invoked");
+        Log.Verbose($"[M] {nameof(CheckShardStates)} invoked");
         try
         {
-            await RecalibrateTwitchChannels();
+            await ReloadTwitchChannels();
             while (Recalibrating) await Task.Delay(1000); // don't proceed until the method finishes
             List<(bool remove, Shard shard)> temp = new(); // do this to avoid reading and writing at the same time
             foreach (Shard shard in Shards)
             {
-                Log.Verbose($"{nameof(CheckShardStates)}: {shard.Name}&{shard.Id}:{shard.State} ➜{shard.SpawnTime}");
+                Log.Verbose($"[M] {nameof(CheckShardStates)}: {shard.Name}&{shard.Id}:{shard.State} ➜{shard.SpawnTime}");
                 if (shard.State is ShardState.Idle or ShardState.Faulted)
                 {
                     if (shard.Channels.Length == 0) temp.Add((true, shard)); // No channels left; shard has no use
                     else temp.Add((false, shard));
                 }
             }
-            Log.Verbose($"{nameof(CheckShardStates)} taking action on {temp.Count} shards");
+            Log.Verbose($"[M] {nameof(CheckShardStates)} taking action on {temp.Count} shards");
             foreach ((bool remove, Shard shard) in temp)
             {
                 if (remove)
@@ -124,7 +126,7 @@ internal sealed class ShardManager
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Error checking shard states");
+            Log.Error(ex, $"[M] Error checking shard states");
         }
     }
 
@@ -133,10 +135,10 @@ internal sealed class ShardManager
     /// </summary>
     private async Task ManageShard(ChannelMessage channelMessage)
     {
-        Log.Verbose($"{channelMessage.Channel} message: {channelMessage.Message}");
+        Log.Verbose($"[M] {channelMessage.Channel} message: {channelMessage.Message}");
         await Task.Run(async () =>
         {
-            Log.Verbose(channelMessage.Message!);
+            Log.Verbose("[M] incoming message:" + channelMessage.Message!);
             try
             {
                 // id REMOVE, id RESPAWN or PING
@@ -160,7 +162,7 @@ internal sealed class ShardManager
             catch
             {
                 if (channelMessage.Message.ToString().Contains("active,")) return;
-                Log.Error($"unrecognized shard:manage command: {channelMessage.Message}");
+                Log.Error($"[M] unrecognized shard:manage command: {channelMessage.Message}");
             }
         });
     }
@@ -170,9 +172,9 @@ internal sealed class ShardManager
     /// <summary>
     /// Loads twitch channels again from twitch:channels and checks for changes to be made to shards
     /// </summary>
-    private async Task RecalibrateTwitchChannels()
+    private async Task ReloadTwitchChannels()
     {
-        Log.Verbose($"{nameof(RecalibrateTwitchChannels)} invoked");
+        Log.Verbose($"{nameof(ReloadTwitchChannels)} invoked");
         Recalibrating = true;
         RedisValue channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
         while (!channelsRedis.HasValue)
@@ -187,7 +189,7 @@ internal sealed class ShardManager
             .OrderByDescending(x => x.Priority)
             .ToArray();
         if (_channels is null) return;
-        Log.Debug($"Loaded {_channels.Length} channels");
+        Log.Debug($"[M] Loaded {_channels.Length} channels");
 
         IEnumerable<TwitchChannel> removedChannels = Channels.ExceptBy(_channels.Select(x => x.Username), x => x.Username);
         IEnumerable<TwitchChannel> addedChannels = _channels.ExceptBy(Channels.Select(x => x.Username), x => x.Username);
@@ -196,8 +198,8 @@ internal sealed class ShardManager
             Channels = Channels.Where(x => !removedChannels.Contains(x)).Concat(addedChannels).ToArray();
         }
 
-        Log.Debug($"channels to be removed: {string.Join(", ", removedChannels)}");
-        Log.Debug($"channels to be added: {string.Join(", ", addedChannels)}");
+        Log.Debug($"[M] channels to be removed: {string.Join(", ", removedChannels)}");
+        Log.Debug($"[M] channels to be added: {string.Join(", ", addedChannels)}");
         foreach (TwitchChannel? channel in removedChannels)
         {
             if (channel is null) return;
@@ -216,6 +218,33 @@ internal sealed class ShardManager
             targetChannel.JoinChannel(channel);
             await Task.Delay(1000);
         }
+
+        Log.Debug("[M] Validating channel connections...");
+        TwitchChannel[] unjoined = Channels.Where(x => //channels where no shard contains them
+                            !Shards.Any(y =>
+                                y.Channels.Any(z => z.Username == x.Username)))
+                                    .ToArray();
+        Log.Debug($"[M] unjoined = {unjoined.Length}");
+
+        IEnumerable<TwitchChannel[]> chunks = Channels.Chunk(ChannelsPerShard);
+        if (chunks.Any(x => x.Length == unjoined.Length))
+        {
+            Log.Information("[M] Creating missing shard...");
+            AddShard(new Shard("TEMP", ShardsSpawned, unjoined));
+        }
+
+        Log.Debug("[M] Checking for duplicates...");
+        for (int i = 0; i < Shards.Count; i++)
+        {
+            Shard shard = Shards[i];
+            if (Shards.Any(x => x.Name != shard.Name && x.Id != shard.Id
+            && Enumerable.SequenceEqual(x.Channels.Select(x => x.Username), shard.Channels.Select(x => x.Username))))
+            {
+                Log.Debug($"Found duplicate shard: {shard.Name}&{shard.Id}");
+                RemoveShard(shard);
+            }
+        }
+
         Recalibrating = false;
     }
     #endregion

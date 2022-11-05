@@ -13,7 +13,7 @@ internal sealed class Shard : AShard, IDisposable
 {
     private TwitchClient client;
     private IntervalTimer timer = default!;
-    private bool NoProceed => disposedValue || string.IsNullOrEmpty(Name);
+    private bool ShouldProceed => disposedValue || string.IsNullOrEmpty(Name) || (Name != "MAIN" && Id == 0);
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -72,7 +72,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Connection
     private async void OnConnected(object? sender, OnConnectedArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Information($"{Name}&{Id} CONNECTED");
         _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTED");
         State = ShardState.Connected;
@@ -81,7 +81,7 @@ internal sealed class Shard : AShard, IDisposable
 
     private async void OnReconnected(object? sender, OnReconnectedEventArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Information($"{Name}&{Id} RECONNECTED");
         _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED 🔄 ");
         await RejoinOrRespawn();
@@ -89,7 +89,7 @@ internal sealed class Shard : AShard, IDisposable
 
     private async void OnConnectionError(object? sender, OnConnectionErrorArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Error($"{Name}&{Id} CONNECTION_ERROR");
         _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR ⚠ ");
         State = ShardState.Faulted;
@@ -98,7 +98,7 @@ internal sealed class Shard : AShard, IDisposable
 
     private async void OnDisconnected(object? sender, OnDisconnectedEventArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Error($"{Name}&{Id} DISCONNECTED");
         _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED ⚠ ");
         State = ShardState.Disconnected;
@@ -109,7 +109,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Channels
     private async void OnJoinedChannel(object? sender, OnJoinedChannelArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         if (State == ShardState.Active)
         {
             Log.Information($"{Name}&{Id} JOINED {e.Channel}");
@@ -121,14 +121,14 @@ internal sealed class Shard : AShard, IDisposable
 
     private async void OnLeftChannel(object? sender, OnLeftChannelArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Information($"{Name}&{Id} PARTED {e.Channel}");
         _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} PARTED {e.Channel}");
     }
 
     private async void OnFailureToReceiveJoinConfirmation(object? sender, OnFailureToReceiveJoinConfirmationArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         Log.Warning($"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
         _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
     }
@@ -137,7 +137,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Chat related
     private async void OnMessageReceived(object? sender, OnMessageReceivedArgs e)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         ChatMessage message = e.ChatMessage;
         string json = JsonSerializer.Serialize(message, _jsonOptions);
         _ = await Program.Redis.Sub.PublishAsync("twitch:messages", json);
@@ -151,7 +151,7 @@ internal sealed class Shard : AShard, IDisposable
         {
             case "RECONNECT :tmi.twitch.tv":
             case ":tmi.twitch.tv RECONNECT":
-                if (NoProceed) return;
+                if (ShouldProceed) return;
                 Log.Error($"{Name}&{Id} {nameof(OnLog)}");
                 State = ShardState.Disconnected;
                 Program.Manager.RespawnShard(this);
@@ -171,7 +171,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Channel management
     private async Task JoinChannels()
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         try
         {
             foreach (string channel in Channels.Select(x => x.Username))
@@ -195,7 +195,7 @@ internal sealed class Shard : AShard, IDisposable
 
     public void JoinChannel(TwitchChannel channel)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         if (Channels.Any(x => x.Username == channel.Username)) return;
         client.JoinChannel(channel.Username);
         Channels = Channels.Concat(new[] { channel }).ToArray();
@@ -203,7 +203,7 @@ internal sealed class Shard : AShard, IDisposable
 
     public void PartChannel(TwitchChannel channel)
     {
-        if (NoProceed) return;
+        if (ShouldProceed) return;
         if (!Channels.Any(x => x.Username == channel.Username)) return;
         client.LeaveChannel(channel.Username);
         Channels = Channels.Where(x => x.Username != channel.Username).ToArray();
@@ -218,7 +218,7 @@ internal sealed class Shard : AShard, IDisposable
     #region Shard management
     private async Task RejoinOrRespawn()
     {
-        if (NoProceed)
+        if (ShouldProceed)
         {
             State = ShardState.Uninitialized;
             Program.Manager.RespawnShard(this);
@@ -242,7 +242,7 @@ internal sealed class Shard : AShard, IDisposable
 
     private void CheckState()
     {
-        if (NoProceed)
+        if (ShouldProceed)
         {
             State = ShardState.Uninitialized;
             Program.Manager.RespawnShard(this);
