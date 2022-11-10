@@ -59,10 +59,12 @@ internal sealed class ShardManager
     /// </summary>
     public void RespawnShard(Shard shard)
     {
-        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
-        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
-        if (!string.IsNullOrEmpty(shard.Name) || shard.Name.Length < 2)
+        if (!string.IsNullOrEmpty(shard.Name) || shard.Name.Length > 2)
+        {
+            _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
+            _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
             AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
+        }
         else
             AddShard(new Shard("NONAME", ShardsSpawned, shard.Channels));
         RemoveShard(shard);
