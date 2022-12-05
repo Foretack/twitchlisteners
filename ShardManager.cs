@@ -43,6 +43,10 @@ internal sealed class ShardManager
         _timer.AutoReset = true;
         _timer.Enabled = true;
         _timer.Elapsed += async (_, _) => await CheckShardStates();
+        _timer.Elapsed += async (_, _) =>
+        {
+            _ = await Program.Redis.Db.StringSetAsync("shards:ping", Ping(), TimeSpan.FromHours(1));
+        };
 
         Program.Redis["shard:manage"].OnMessage(async message => await ManageShard(message));
     }
@@ -51,7 +55,7 @@ internal sealed class ShardManager
     public string Ping()
     {
         Log.Verbose("[M] shard status pinged");
-        return $"{ShardsSpawned - ShardsKilled} active, {ShardsSpawned} spawned, {ShardsKilled} killed ";
+        return $"\"{ShardsSpawned - ShardsKilled} active, {ShardsSpawned} spawned, {ShardsKilled} killed\"";
     }
 
     /// <summary>
@@ -138,18 +142,13 @@ internal sealed class ShardManager
     private async Task ManageShard(ChannelMessage channelMessage)
     {
         Log.Verbose($"[M] {channelMessage.Channel} message: {channelMessage.Message}");
-        await Task.Run(async () =>
+        await Task.Run(() =>
         {
             Log.Verbose("[M] incoming message:" + channelMessage.Message!);
             try
             {
-                // id REMOVE, id RESPAWN or PING
+                // id REMOVE, id RESPAWN
                 string[] content = channelMessage.Message.ToString().Split(' ');
-                if (content[0] == "PING" || content[0].Contains("PING"))                                               // PING
-                {
-                    _ = await Program.Redis.Sub.PublishAsync("shard:manage:ping", Ping());
-                    return;
-                }
                 int id = int.Parse(content[0][1..]); // id of shard to modify
                 bool remove = content[1].Contains("REMOVE"); // action
                 Shard target = Shards.First(x => x.Id == id); // find shard with id
