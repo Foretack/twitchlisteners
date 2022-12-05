@@ -147,7 +147,7 @@ internal sealed class ShardManager
                 string[] content = channelMessage.Message.ToString().Split(' ');
                 if (content[0] == "PING" || content[0].Contains("PING"))                                               // PING
                 {
-                    _ = await Program.Redis.Sub.PublishAsync("shard:manage", Ping());
+                    _ = await Program.Redis.Sub.PublishAsync("shard:manage:ping", Ping());
                     return;
                 }
                 int id = int.Parse(content[0][1..]); // id of shard to modify
