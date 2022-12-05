@@ -145,13 +145,13 @@ internal sealed class ShardManager
             {
                 // id REMOVE, id RESPAWN or PING
                 string[] content = channelMessage.Message.ToString().Split(' ');
-                if (content[0] == "PING")                                               // PING
+                if (content[0] == "PING" || content[0].Contains("PING"))                                               // PING
                 {
                     _ = await Program.Redis.Sub.PublishAsync("shard:manage", Ping());
                     return;
                 }
-                int id = int.Parse(content[0]); // id of shard to modify
-                bool remove = content[1] == "REMOVE"; // action
+                int id = int.Parse(content[0][1..]); // id of shard to modify
+                bool remove = content[1].Contains("REMOVE"); // action
                 Shard target = Shards.First(x => x.Id == id); // find shard with id
 
                 if (remove)
