@@ -30,5 +30,7 @@ internal static class Program
 
         Log.Debug("starting ShardManager");
         Manager = new ShardManager(channels);
+
+        _ = Console.ReadKey();
     }
 }
