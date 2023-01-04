@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using _26listeners.Models;
-using StackExchange.Redis;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
@@ -45,7 +44,10 @@ internal sealed class Shard : AShard, IDisposable
         client.OnError += OnError;
         client.OnLog += OnLog;
 
-        try { _ = client.Connect(); }
+        try
+        {
+            Task.Run(() => _ = client.Connect());
+        }
         catch (Exception ex)
         {
             State = ShardState.Faulted;
@@ -75,7 +77,7 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (ShouldStop) return;
         Log.Information($"{Name}&{Id} CONNECTED");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTED", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTED");
         State = ShardState.Connected;
         await JoinChannels();
     }
@@ -84,7 +86,7 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (ShouldStop) return;
         Log.Information($"{Name}&{Id} RECONNECTED");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED 🔄 ", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED 🔄 ");
         await RejoinOrRespawn();
     }
 
@@ -92,7 +94,7 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (ShouldStop) return;
         Log.Error($"{Name}&{Id} CONNECTION_ERROR");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR ⚠ ", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR ⚠ ");
         State = ShardState.Faulted;
         Program.Manager.RespawnShard(this);
     }
@@ -101,7 +103,7 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (ShouldStop) return;
         Log.Error($"{Name}&{Id} DISCONNECTED");
-        _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED ⚠ ", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED ⚠ ");
         State = ShardState.Disconnected;
         Program.Manager.RespawnShard(this);
     }
@@ -114,7 +116,7 @@ internal sealed class Shard : AShard, IDisposable
         if (State == ShardState.Active)
         {
             Log.Information($"{Name}&{Id} JOINED {e.Channel}");
-            _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}", CommandFlags.FireAndForget);
+            await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
             return;
         }
         Log.Debug($"{Name}&{Id} JOINED {e.Channel}");
@@ -124,14 +126,14 @@ internal sealed class Shard : AShard, IDisposable
     {
         if (ShouldStop) return;
         Log.Information($"{Name}&{Id} PARTED {e.Channel}");
-        _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} PARTED {e.Channel}", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} PARTED {e.Channel}");
     }
 
     private async void OnFailureToReceiveJoinConfirmation(object? sender, OnFailureToReceiveJoinConfirmationArgs e)
     {
         if (ShouldStop) return;
         Log.Warning($"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
-        _ = await Program.Redis.Sub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}", CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
     }
     #endregion
 
@@ -139,9 +141,7 @@ internal sealed class Shard : AShard, IDisposable
     private async void OnMessageReceived(object? sender, OnMessageReceivedArgs e)
     {
         if (ShouldStop) return;
-        ChatMessage message = e.ChatMessage;
-        string json = JsonSerializer.Serialize(message, _jsonOptions);
-        _ = await Program.Redis.Sub.PublishAsync("twitch:messages", json, CommandFlags.FireAndForget);
+        await Program.Redis.PubSub.PublishAsync("twitch:messages", e.ChatMessage);
     }
     #endregion
 
@@ -182,11 +182,11 @@ internal sealed class Shard : AShard, IDisposable
                 await Task.Delay(1000);
             }
             Log.Information($"{Name}&{Id} READY");
-            _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} READY ✅ ", CommandFlags.FireAndForget);
+            await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} READY ✅ ");
         }
         catch (Exception)
         {
-            _ = await Program.Redis.Sub.PublishAsync("shard:updates", $"{Name}&{Id} FAULTED", CommandFlags.FireAndForget);
+            await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} FAULTED");
             Log.Error($"{Name}&{Id} FAULTED");
             State = ShardState.Faulted;
             return;
@@ -277,7 +277,8 @@ internal sealed class Shard : AShard, IDisposable
         if (!disposedValue)
         {
             Log.Warning($"{Name}&{Id} DISPOSING");
-            _ = Program.Redis.Sub.Publish("shard:updates", $"{Name}&{Id} DISPOSING ⚠ ", CommandFlags.FireAndForget);
+            Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} DISPOSING ⚠ ")
+                .GetAwaiter().GetResult();
             if (disposing)
             {
                 Name = default!;

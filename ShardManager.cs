@@ -1,6 +1,4 @@
-﻿using System.Text.Json;
-using _26listeners.Models;
-using StackExchange.Redis;
+﻿using _26listeners.Models;
 using IntervalTimer = System.Timers.Timer;
 
 namespace _26listeners;
@@ -15,11 +13,10 @@ internal sealed class ShardManager
     private bool Recalibrating { get; set; }
     private readonly IntervalTimer _timer = new();
 
-    public ShardManager(string channelsJson, int channelsPerShard = 25)
+    public ShardManager(TwitchChannel[] channels, int channelsPerShard = 25)
     {
         ChannelsPerShard = channelsPerShard;
-        Channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsJson)
-            ?? throw new JsonException("Channel deserialization error");
+        Channels = channels;
 
         // Determine main channel by top priority
         TwitchChannel mainChannel = Channels.First(x => Channels.Max(y => y.Priority) == x.Priority);
@@ -45,10 +42,10 @@ internal sealed class ShardManager
         _timer.Elapsed += async (_, _) => await CheckShardStates();
         _timer.Elapsed += async (_, _) =>
         {
-            _ = await Program.Redis.Db.StringSetAsync("shards:ping", Ping(), TimeSpan.FromHours(1));
+            await Program.Redis.Cache.SetObjectAsync("shards:ping", Ping(), TimeSpan.FromHours(1));
         };
 
-        Program.Redis["shard:manage"].OnMessage(async message => await ManageShard(message));
+        Program.Redis.PubSub.SubscribeAsync<string>("shard:manage", async m => await ManageShard(m));
     }
 
     #region Shards
@@ -65,8 +62,10 @@ internal sealed class ShardManager
     {
         if (!string.IsNullOrEmpty(shard.Name) || shard.Name.Length > 2)
         {
-            _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
-            _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ");
+            Program.Redis.PubSub.PublishAsync("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ")
+                .GetAwaiter().GetResult();
+            Program.Redis.PubSub.PublishAsync($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} RESPAWN ♻ ")
+                .GetAwaiter().GetResult();
             AddShard(new Shard(shard.Name, ShardsSpawned, shard.Channels));
         }
         else
@@ -80,8 +79,10 @@ internal sealed class ShardManager
     private void AddShard(Shard shard)
     {
         Log.Information($"[M] +SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id} ADD 🥤 ");
-        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id} ADD 🥤 ");
+        Program.Redis.PubSub.PublishAsync("shard:updates", $"{shard.Name}&{shard.Id} ADD 🥤 ")
+            .GetAwaiter().GetResult();
+        Program.Redis.PubSub.PublishAsync($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id} ADD 🥤 ")
+            .GetAwaiter().GetResult();
         Shards.Add(shard);
         ++ShardsSpawned;
     }
@@ -92,8 +93,10 @@ internal sealed class ShardManager
     private void RemoveShard(Shard shard)
     {
         Log.Information($"[M] -SHARD:{shard.Name}#{shard.Id}");
-        _ = Program.Redis.Sub.Publish("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
-        _ = Program.Redis.Sub.Publish($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ");
+        Program.Redis.PubSub.PublishAsync("shard:updates", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ")
+            .GetAwaiter().GetResult();
+        Program.Redis.PubSub.PublishAsync($"shard:updates:{shard.Id}", $"{shard.Name}&{shard.Id}|{shard.State} REMOVE ⛔ ")
+            .GetAwaiter().GetResult();
         _ = Shards.Remove(shard);
         shard.Dispose();
         ++ShardsKilled; // this is not the active amount. stop decrementing it retard
@@ -139,16 +142,15 @@ internal sealed class ShardManager
     /// <summary>
     /// shard:manage method
     /// </summary>
-    private async Task ManageShard(ChannelMessage channelMessage)
+    private async Task ManageShard(string channelMessage)
     {
-        Log.Verbose($"[M] {channelMessage.Channel} message: {channelMessage.Message}");
+        Log.Verbose($"[M] message: {channelMessage}");
         await Task.Run(() =>
         {
-            Log.Verbose("[M] incoming message:" + channelMessage.Message!);
             try
             {
                 // id REMOVE, id RESPAWN
-                string[] content = channelMessage.Message.ToString().Split(' ');
+                string[] content = channelMessage.Split(' ');
                 int id = int.Parse(content[0][1..]); // id of shard to modify
                 bool remove = content[1].Contains("REMOVE"); // action
                 Shard target = Shards.First(x => x.Id == id); // find shard with id
@@ -162,8 +164,8 @@ internal sealed class ShardManager
             }
             catch
             {
-                if (channelMessage.Message.ToString().Contains("active,")) return;
-                Log.Error($"[M] unrecognized shard:manage command: {channelMessage.Message}");
+                if (channelMessage.Contains("active,")) return;
+                Log.Error($"[M] unrecognized shard:manage command: {channelMessage}");
             }
         });
     }
@@ -177,15 +179,9 @@ internal sealed class ShardManager
     {
         Log.Verbose($"{nameof(ReloadTwitchChannels)} invoked");
         Recalibrating = true;
-        RedisValue channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
-        while (!channelsRedis.HasValue)
-        {
-            Log.Warning("twitch:channels not found in Redis. Unable to update");
-            await Task.Delay(60000);
-            channelsRedis = await Program.Redis.Db.StringGetAsync("twitch:channels");
-        }
+        var channels = await Program.Redis.Cache.GetObjectAsync<TwitchChannel[]>("twitch:channels");
 
-        TwitchChannel[]? _channels = JsonSerializer.Deserialize<TwitchChannel[]>(channelsRedis!)?
+        TwitchChannel[]? _channels = channels
             .Where(x => x.Priority > -10)
             .OrderByDescending(x => x.Priority)
             .ToArray();
