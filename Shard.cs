@@ -179,7 +179,7 @@ internal sealed class Shard : AShard, IDisposable
             {
                 client.JoinChannel(channel);
                 Log.Verbose($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
-                await Task.Delay(TimeSpan.FromSeconds(5));
+                await Task.Delay(TimeSpan.FromSeconds(1));
             }
             Log.Information($"{Name}&{Id} READY");
             await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} READY ✅ ");

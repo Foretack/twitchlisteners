@@ -31,10 +31,14 @@ internal sealed class ShardManager
 
         // Main channel is always the first to be joined
         AddShard(new Shard("MAIN", ShardsSpawned, new[] { mainChannel }));
-        foreach (TwitchChannel[] channelBatch in chunks) // Spawn shard for each chunk
+        Task.Run(async () =>
         {
-            AddShard(new Shard("LISTENER", ShardsSpawned, channelBatch));
-        }
+            foreach (TwitchChannel[] channelBatch in chunks) // Spawn shard for each chunk
+            {
+                AddShard(new Shard("LISTENER", ShardsSpawned, channelBatch));
+                await Task.Delay(TimeSpan.FromSeconds(ChannelsPerShard));
+            }
+        });
 
         _timer.Interval = TimeSpan.FromHours(1).TotalMilliseconds;
         _timer.AutoReset = true;
