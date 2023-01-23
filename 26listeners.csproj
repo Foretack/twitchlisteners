@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CachingFramework.Redis" Version="15.0.1" />
+    <PackageReference Include="CachingFramework.Redis" Version="15.0.2" />
     <PackageReference Include="Config.Net" Version="5.1.5" />
     <PackageReference Include="Serilog" Version="2.12.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
