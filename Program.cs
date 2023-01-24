@@ -1,4 +1,5 @@
 ﻿global using Serilog;
+using System.Runtime.InteropServices;
 using _26listeners.Models;
 using Config.Net;
 using Serilog.Events;
@@ -19,10 +20,19 @@ internal static class Program
             .WriteTo.File("verbose.txt", LogEventLevel.Verbose, "{Timestamp:HH:mm:ss zzz}-----[{Level}]➜ {Message:lj}{NewLine}", flushToDiskInterval: TimeSpan.FromMinutes(10), rollingInterval: RollingInterval.Day)
             .WriteTo.Console(LogEventLevel.Information)
             .CreateLogger();
-
-        var config = new ConfigurationBuilder<IAppConfig>()
+        IAppConfig config;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            config = new ConfigurationBuilder<IAppConfig>()
+            .UseJsonFile("/root/bots/twitchlisteners/config.json")
+            .Build();
+        }
+        else
+        {
+            config = new ConfigurationBuilder<IAppConfig>()
             .UseJsonFile("config.json")
             .Build();
+        }
 
         Redis = new RedisConn($"{config.RedisHost},password={config.RedisPass}");
 
