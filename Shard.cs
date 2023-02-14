@@ -46,7 +46,7 @@ internal sealed class Shard : AShard, IDisposable
 
         try
         {
-            Task.Run(() => _ = client.Connect());
+            _ = Task.Run(() => _ = client.Connect());
         }
         catch (Exception ex)
         {
@@ -75,35 +75,35 @@ internal sealed class Shard : AShard, IDisposable
     #region Connection
     private async void OnConnected(object? sender, OnConnectedArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Information($"{Name}&{Id} CONNECTED");
-        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTED");
         State = ShardState.Connected;
         await JoinChannels();
     }
 
     private async void OnReconnected(object? sender, OnReconnectedEventArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Information($"{Name}&{Id} RECONNECTED");
-        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} RECONNECTED 🔄 ");
         await RejoinOrRespawn();
     }
 
-    private async void OnConnectionError(object? sender, OnConnectionErrorArgs e)
+    private void OnConnectionError(object? sender, OnConnectionErrorArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Error($"{Name}&{Id} CONNECTION_ERROR");
-        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} CONNECTION_ERROR ⚠ ");
         State = ShardState.Faulted;
         Program.Manager.RespawnShard(this);
     }
 
-    private async void OnDisconnected(object? sender, OnDisconnectedEventArgs e)
+    private void OnDisconnected(object? sender, OnDisconnectedEventArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Error($"{Name}&{Id} DISCONNECTED");
-        await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} DISCONNECTED ⚠ ");
         State = ShardState.Disconnected;
         Program.Manager.RespawnShard(this);
     }
@@ -112,26 +112,30 @@ internal sealed class Shard : AShard, IDisposable
     #region Channels
     private async void OnJoinedChannel(object? sender, OnJoinedChannelArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         if (State == ShardState.Active)
         {
             Log.Information($"{Name}&{Id} JOINED {e.Channel}");
             await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOINED {e.Channel}");
             return;
         }
+
         Log.Debug($"{Name}&{Id} JOINED {e.Channel}");
     }
 
     private async void OnLeftChannel(object? sender, OnLeftChannelArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Information($"{Name}&{Id} PARTED {e.Channel}");
         await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} PARTED {e.Channel}");
     }
 
     private async void OnFailureToReceiveJoinConfirmation(object? sender, OnFailureToReceiveJoinConfirmationArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         Log.Warning($"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
         await Program.Redis.PubSub.PublishAsync("twitch:channels:updates", $"{Name}&{Id} JOIN_ERROR {e.Exception.Channel}");
     }
@@ -140,7 +144,8 @@ internal sealed class Shard : AShard, IDisposable
     #region Chat related
     private async void OnMessageReceived(object? sender, OnMessageReceivedArgs e)
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         await Program.Redis.PubSub.PublishAsync("twitch:messages", e.ChatMessage);
     }
     #endregion
@@ -152,7 +157,8 @@ internal sealed class Shard : AShard, IDisposable
         {
             case "RECONNECT :tmi.twitch.tv":
             case ":tmi.twitch.tv RECONNECT":
-                if (ShouldStop) return;
+                if (ShouldStop)
+                    return;
                 Log.Error($"{Name}&{Id} {nameof(OnLog)}");
                 State = ShardState.Disconnected;
                 Program.Manager.RespawnShard(this);
@@ -172,7 +178,8 @@ internal sealed class Shard : AShard, IDisposable
     #region Channel management
     private async Task JoinChannels()
     {
-        if (ShouldStop) return;
+        if (ShouldStop)
+            return;
         try
         {
             foreach (string channel in Channels.Select(x => x.Username))
@@ -181,31 +188,36 @@ internal sealed class Shard : AShard, IDisposable
                 Log.Verbose($"{Name}&{Id} ATTEMPTING_JOIN {channel}");
                 await Task.Delay(TimeSpan.FromSeconds(1));
             }
+
             Log.Information($"{Name}&{Id} READY");
             await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} READY ✅ ");
         }
         catch (Exception)
         {
-            await Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} FAULTED");
             Log.Error($"{Name}&{Id} FAULTED");
             State = ShardState.Faulted;
             return;
         }
+
         State = ShardState.Active;
     }
 
     public void JoinChannel(TwitchChannel channel)
     {
-        if (ShouldStop) return;
-        if (Channels.Any(x => x.Username == channel.Username)) return;
+        if (ShouldStop)
+            return;
+        if (Channels.Any(x => x.Username == channel.Username))
+            return;
         client.JoinChannel(channel.Username);
         Channels = Channels.Concat(new[] { channel }).ToArray();
     }
 
     public void PartChannel(TwitchChannel channel)
     {
-        if (ShouldStop) return;
-        if (!Channels.Any(x => x.Username == channel.Username)) return;
+        if (ShouldStop)
+            return;
+        if (!Channels.Any(x => x.Username == channel.Username))
+            return;
         client.LeaveChannel(channel.Username);
         Channels = Channels.Where(x => x.Username != channel.Username).ToArray();
         if (Channels.Length == 0)
@@ -225,6 +237,7 @@ internal sealed class Shard : AShard, IDisposable
             Program.Manager.RespawnShard(this);
             return;
         }
+
         Log.Information($"{Name}&{Id} {nameof(RejoinOrRespawn)}");
         try
         {
@@ -233,6 +246,7 @@ internal sealed class Shard : AShard, IDisposable
             {
                 await JoinChannels();
             }
+
             State = ShardState.Active;
         }
         catch
@@ -249,6 +263,7 @@ internal sealed class Shard : AShard, IDisposable
             Program.Manager.RespawnShard(this);
             return;
         }
+
         try
         {
             Log.Verbose($"{Name}&{Id} is connected to {client.JoinedChannels.Count} channels");
@@ -259,6 +274,7 @@ internal sealed class Shard : AShard, IDisposable
             Log.Error(ex, $"{Name}&{Id}:{client.JoinedChannels.Count} BAD_STATE");
             State = ShardState.Idle;
         }
+
         if (Channels.Length == 0
         || client.JoinedChannels.Count == 0
         || State is ShardState.Faulted or ShardState.Uninitialized or ShardState.Disconnected)
@@ -277,8 +293,6 @@ internal sealed class Shard : AShard, IDisposable
         if (!disposedValue)
         {
             Log.Warning($"{Name}&{Id} DISPOSING");
-            Program.Redis.PubSub.PublishAsync("shard:updates", $"{Name}&{Id} DISPOSING ⚠ ")
-                .GetAwaiter().GetResult();
             if (disposing)
             {
                 Name = default!;
