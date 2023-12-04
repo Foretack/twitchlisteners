@@ -12,7 +12,7 @@
     <PackageReference Include="CachingFramework.Redis" Version="15.0.2" />
     <PackageReference Include="Config.Net" Version="5.1.5" />
     <PackageReference Include="Serilog" Version="3.1.1" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
     <PackageReference Include="TwitchLib.Client" Version="3.3.1" />
   </ItemGroup>
